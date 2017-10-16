@@ -25,7 +25,9 @@ for path in [results_path, dataset_path]:
     if not os.path.exists(path):
         os.mkdir(path)
 
-file_name = '%s.%d.%d.train.oversampled.csv' % (args['dataset'], args['partition'], args['fold'])
-path = os.path.join(dataset_path, file_name)
-df = pd.DataFrame(np.c_[X_train, y_train])
-df.to_csv(path, index=False, header=df.columns)
+output_file_name = '%s.%d.%d.train.oversampled.csv' % (args['dataset'], args['partition'], args['fold'])
+output_path = os.path.join(dataset_path, output_file_name)
+original_file_name = output_file_name.replace('.oversampled', '')
+original_path = os.path.join(os.path.join(os.path.dirname(__file__), 'data', 'folds', args['dataset'], original_file_name))
+header = pd.read_csv(original_path).columns
+pd.DataFrame(np.c_[X_train, y_train]).to_csv(output_path, index=False, header=header)

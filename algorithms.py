@@ -9,32 +9,11 @@ def _distance(x, y):
     return np.sum(np.abs(x - y))
 
 
-def _pairwise_distances(X):
-    D = np.zeros((len(X), len(X)))
-
-    for i in range(len(X)):
-        for j in range(len(X)):
-            if i == j:
-                continue
-
-            d = _distance(X[i], X[j])
-
-            D[i][j] = d
-            D[j][i] = d
-
-    return D
-
-
-def _score(point, X, y, minority_class, epsilon, cost):
+def _score(point, X, y, minority_class, epsilon):
     mutual_density_score = 0.0
 
     for i in range(len(X)):
-        if type(cost[cost.keys()[0]]) is dict:
-            current_cost = cost[y[i]][minority_class]
-        else:
-            current_cost = cost[y[i]]
-
-        rbf = _rbf(_distance(point, X[i]), epsilon / current_cost)
+        rbf = _rbf(_distance(point, X[i]), epsilon)
 
         if y[i] == minority_class:
             mutual_density_score -= rbf
@@ -46,7 +25,7 @@ def _score(point, X, y, minority_class, epsilon, cost):
 
 class RBO:
     def __init__(self, gamma=0.05, n_steps=500, step_size=0.001, stop_probability=0.02, criterion='balance',
-                 cost=None, minority_class=None, n=None):
+                 minority_class=None, n=None):
         assert criterion in ['balance', 'minimize', 'maximize']
         assert 0.0 <= stop_probability <= 1.0
 
@@ -55,24 +34,12 @@ class RBO:
         self.step_size = step_size
         self.stop_probability = stop_probability
         self.criterion = criterion
-        self.cost = cost
         self.minority_class = minority_class
         self.n = n
 
     def fit_sample(self, X, y):
         epsilon = 1.0 / self.gamma
         classes = np.unique(y)
-
-        if self.cost is None:
-            cost = {}
-
-            for current_class in classes:
-                cost[current_class] = {}
-
-                for opposing_class in classes:
-                    cost[current_class][opposing_class] = 1.0
-        else:
-            cost = self.cost
 
         if self.minority_class is None:
             sizes = [sum(y == c) for c in classes]
@@ -91,7 +58,7 @@ class RBO:
 
         for i in range(len(minority_points)):
             minority_point = minority_points[i]
-            minority_scores.append(_score(minority_point, X, y, minority_class, epsilon, cost))
+            minority_scores.append(_score(minority_point, X, y, minority_class, epsilon))
 
         appended = []
 
@@ -108,7 +75,7 @@ class RBO:
                 sign = np.random.choice([-1, 1])
                 translation[np.random.choice(range(len(point)))] = sign * self.step_size
                 translated_point = point + translation
-                translated_score = _score(translated_point, X, y, minority_class, epsilon, cost)
+                translated_score = _score(translated_point, X, y, minority_class, epsilon)
 
                 if (self.criterion == 'balance' and np.abs(translated_score) < np.abs(score)) or \
                         (self.criterion == 'minimize' and translated_score < score) or \
@@ -123,7 +90,7 @@ class RBO:
 
 class MultiClassRBO:
     def __init__(self, gamma=0.05, n_steps=500, step_size=0.001, stop_probability=0.02, criterion='balance',
-                 cost=None, method='individual'):
+                 method='individual'):
         assert criterion in ['balance', 'minimize', 'maximize']
         assert method in ['individual', 'joint']
         assert 0.0 <= stop_probability <= 1.0
@@ -133,7 +100,6 @@ class MultiClassRBO:
         self.step_size = step_size
         self.stop_probability = stop_probability
         self.criterion = criterion
-        self.cost = cost
         self.method = method
 
     def fit_sample(self, X, y):
@@ -141,23 +107,8 @@ class MultiClassRBO:
         sizes = np.array([float(sum(y == c)) for c in classes])
         indices = np.argsort(sizes)[::-1]
         classes = classes[indices]
-        sizes = sizes[indices]
         observations = [X[y == c] for c in classes]
         n_max = len(observations[0])
-
-        if self.cost is None or self.cost is True:
-            cost = {}
-
-            for current_class, current_size in zip(classes, sizes):
-                cost[current_class] = {}
-
-                for opposing_class, opposing_size in zip(classes, sizes):
-                    if self.cost is None:
-                        cost[current_class][opposing_class] = 1.0
-                    else:
-                        cost[current_class][opposing_class] = np.sqrt(opposing_size / current_size)
-        else:
-            cost = self.cost
 
         if self.method == 'individual':
             for i in range(1, len(classes)):
@@ -173,25 +124,20 @@ class MultiClassRBO:
 
                 oversampler = RBO(gamma=self.gamma, n_steps=self.n_steps, step_size=self.step_size,
                                   stop_probability=self.stop_probability, criterion=self.criterion,
-                                  cost=cost, minority_class=cls, n=n)
+                                  minority_class=cls, n=n)
 
                 appended = oversampler.fit_sample(np.concatenate(X_sample), np.concatenate(y_sample))
 
                 if len(appended) > 0:
                     observations[i] = np.concatenate([observations[i], appended])
         else:
-            avg_cost = cost.copy()
-
-            for k in avg_cost.keys():
-                avg_cost[k] = np.mean(avg_cost[k].values())
-
             for i in range(1, len(classes)):
                 cls = classes[i]
                 n = n_max - len(observations[i])
 
                 oversampler = RBO(gamma=self.gamma, n_steps=self.n_steps, step_size=self.step_size,
                                   stop_probability=self.stop_probability, criterion=self.criterion,
-                                  cost=avg_cost, minority_class=cls, n=n)
+                                  minority_class=cls, n=n)
 
                 appended = oversampler.fit_sample(X, y)
 

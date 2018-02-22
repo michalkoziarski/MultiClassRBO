@@ -90,9 +90,9 @@ class RBO:
 
 class MultiClassRBO:
     def __init__(self, gamma=0.05, n_steps=500, step_size=0.001, stop_probability=0.02, criterion='balance',
-                 method='individual'):
+                 method='sampling'):
         assert criterion in ['balance', 'minimize', 'maximize']
-        assert method in ['individual', 'joint']
+        assert method in ['sampling', 'complete']
         assert 0.0 <= stop_probability <= 1.0
 
         self.gamma = gamma
@@ -110,7 +110,7 @@ class MultiClassRBO:
         observations = [X[y == c] for c in classes]
         n_max = len(observations[0])
 
-        if self.method == 'individual':
+        if self.method == 'sampling':
             for i in range(1, len(classes)):
                 cls = classes[i]
                 n = n_max - len(observations[i])

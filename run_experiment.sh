@@ -26,7 +26,9 @@ datasets=(
 for dataset in "${datasets[@]}"; do
     for partition in {1..5}; do
         for fold in {1..2}; do
-            sbatch slurm.sh trial.py -dataset $dataset -partition $partition -fold $fold
+            sbatch slurm.sh trial.py -dataset $dataset -partition $partition -fold $fold -mode OVA -method sampling -results_path results_OVA_sampling
+            sbatch slurm.sh trial.py -dataset $dataset -partition $partition -fold $fold -mode OVA -method complete -results_path results_OVA_complete
+            sbatch slurm.sh trial.py -dataset $dataset -partition $partition -fold $fold -mode OVO -results_path results_OVO
         done
     done
 done

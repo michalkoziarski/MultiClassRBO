@@ -24,7 +24,7 @@ def _score(point, X, y, minority_class, epsilon):
 
 
 class RBO:
-    def __init__(self, gamma=0.05, n_steps=500, step_size=0.001, stop_probability=0.02, criterion='balance',
+    def __init__(self, gamma=0.05, n_steps=5000, step_size=0.0001, stop_probability=0.001, criterion='balance',
                  minority_class=None, n=None):
         assert criterion in ['balance', 'minimize', 'maximize']
         assert 0.0 <= stop_probability <= 1.0
@@ -89,7 +89,7 @@ class RBO:
 
 
 class MultiClassRBO:
-    def __init__(self, gamma=0.05, n_steps=500, step_size=0.001, stop_probability=0.02, criterion='balance',
+    def __init__(self, gamma=0.05, n_steps=5000, step_size=0.0001, stop_probability=0.001, criterion='balance',
                  method='sampling'):
         assert criterion in ['balance', 'minimize', 'maximize']
         assert method in ['sampling', 'complete']

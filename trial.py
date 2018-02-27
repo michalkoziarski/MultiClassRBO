@@ -20,7 +20,10 @@ dataset_path = os.path.join(args.results_path, args.dataset)
 
 for path in [args.results_path, dataset_path]:
     if not os.path.exists(path):
-        os.mkdir(path)
+        try:
+            os.mkdir(path)
+        except OSError:
+            print('WARNING: failed to create a directory under "%s", likely due to race condition.' % path)
 
 (X_train, y_train), (X_test, y_test) = datasets.load(args.dataset, args.partition, args.fold)
 

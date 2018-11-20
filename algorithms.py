@@ -1,105 +1,146 @@
 import numpy as np
 
 
-def _rbf(d, eps):
-    return np.exp(-(d * eps) ** 2)
+def distance(x, y, p_norm=1):
+    return np.sum(np.abs(x - y) ** p_norm) ** (1 / p_norm)
 
 
-def _distance(x, y):
-    return np.sum(np.abs(x - y))
+def rbf(d, gamma):
+    if gamma == 0.0:
+        return 0.0
+    else:
+        return np.exp(-(d / gamma) ** 2)
 
 
-def _score(point, X, y, minority_class, epsilon):
-    mutual_density_score = 0.0
+def mutual_class_potential(point, majority_points, minority_points, gamma):
+    result = 0.0
 
-    for i in range(len(X)):
-        rbf = _rbf(_distance(point, X[i]), epsilon)
+    for majority_point in majority_points:
+        result += rbf(distance(point, majority_point), gamma)
 
-        if y[i] == minority_class:
-            mutual_density_score -= rbf
-        else:
-            mutual_density_score += rbf
+    for minority_point in minority_points:
+        result -= rbf(distance(point, minority_point), gamma)
 
-    return mutual_density_score
+    return result
+
+
+def generate_possible_directions(n_dimensions, excluded_direction=None):
+    possible_directions = []
+
+    for dimension in range(n_dimensions):
+        for sign in [-1, 1]:
+            if excluded_direction is None or (excluded_direction[0] != dimension or excluded_direction[1] != sign):
+                possible_directions.append((dimension, sign))
+
+    np.random.shuffle(possible_directions)
+
+    return possible_directions
 
 
 class RBO:
-    def __init__(self, gamma=0.05, n_steps=5000, step_size=0.0001, stop_probability=0.001, criterion='balance',
-                 minority_class=None, n=None):
-        assert criterion in ['balance', 'minimize', 'maximize']
-        assert 0.0 <= stop_probability <= 1.0
-
+    def __init__(self, gamma=0.05, step_size=0.001, n_steps=500, approximate_potential=True,
+                 n_nearest_neighbors=25, minority_class=None, n=None):
         self.gamma = gamma
-        self.n_steps = n_steps
         self.step_size = step_size
-        self.stop_probability = stop_probability
-        self.criterion = criterion
+        self.n_steps = n_steps
+        self.approximate_potential = approximate_potential
+        self.n_nearest_neighbors = n_nearest_neighbors
         self.minority_class = minority_class
         self.n = n
 
     def fit_sample(self, X, y):
-        epsilon = 1.0 / self.gamma
         classes = np.unique(y)
 
         if self.minority_class is None:
             sizes = [sum(y == c) for c in classes]
+
             minority_class = classes[np.argmin(sizes)]
+            majority_class = classes[np.argmax(sizes)]
         else:
             minority_class = self.minority_class
 
+            if classes[0] != minority_class:
+                majority_class = classes[0]
+            else:
+                majority_class = classes[1]
+
         minority_points = X[y == minority_class]
+        majority_points = X[y == majority_class]
 
         if self.n is None:
-            n = sum(y != minority_class) - sum(y == minority_class)
+            n = len(majority_points) - len(minority_points)
         else:
             n = self.n
 
-        minority_scores = []
-
-        for i in range(len(minority_points)):
-            minority_point = minority_points[i]
-            minority_scores.append(_score(minority_point, X, y, minority_class, epsilon))
-
         appended = []
+        sorted_neighbors_indices = None
+        considered_minority_points_indices = range(len(minority_points))
 
-        while len(appended) < n:
-            idx = np.random.choice(range(len(minority_points)))
-            point = minority_points[idx].copy()
-            score = minority_scores[idx]
+        n_synthetic_points_per_minority_object = {i: 0 for i in considered_minority_points_indices}
 
-            for i in range(self.n_steps):
-                if self.stop_probability is not None and self.stop_probability > np.random.rand():
-                    break
+        for _ in range(n):
+            idx = np.random.choice(considered_minority_points_indices)
+            n_synthetic_points_per_minority_object[idx] += 1
 
-                translation = np.zeros(len(point))
-                sign = np.random.choice([-1, 1])
-                translation[np.random.choice(range(len(point)))] = sign * self.step_size
-                translated_point = point + translation
-                translated_score = _score(translated_point, X, y, minority_class, epsilon)
+        for i in considered_minority_points_indices:
+            if n_synthetic_points_per_minority_object[i] == 0:
+                continue
 
-                if (self.criterion == 'balance' and np.abs(translated_score) < np.abs(score)) or \
-                        (self.criterion == 'minimize' and translated_score < score) or \
-                        (self.criterion == 'maximize' and translated_score > score):
-                    point = translated_point
-                    score = translated_score
+            point = minority_points[i]
 
-            appended.append(point)
+            if self.approximate_potential:
+                if sorted_neighbors_indices is None:
+                    distance_vector = [distance(point, x) for x in X]
+                    distance_vector[i] = -np.inf
+                    indices = np.argsort(distance_vector)[:(self.n_nearest_neighbors + 1)]
+                else:
+                    indices = sorted_neighbors_indices[i][:(self.n_nearest_neighbors + 1)]
+
+                closest_points = X[indices]
+                closest_labels = y[indices]
+                closest_minority_points = closest_points[closest_labels == minority_class]
+                closest_majority_points = closest_points[closest_labels == majority_class]
+            else:
+                closest_minority_points = minority_points
+                closest_majority_points = majority_points
+
+            for _ in range(n_synthetic_points_per_minority_object[i]):
+                translation = [0 for _ in range(len(point))]
+                translation_history = [translation]
+                potential = mutual_class_potential(point, closest_majority_points, closest_minority_points, self.gamma)
+                possible_directions = generate_possible_directions(len(point))
+
+                for _ in range(self.n_steps):
+                    if len(possible_directions) == 0:
+                        break
+
+                    dimension, sign = possible_directions.pop()
+                    modified_translation = translation.copy()
+                    modified_translation[dimension] += sign * self.step_size
+                    modified_potential = mutual_class_potential(point + modified_translation, closest_majority_points,
+                                                                closest_minority_points, self.gamma)
+
+                    if np.abs(modified_potential) < np.abs(potential):
+                        translation = modified_translation
+                        translation_history.append(translation)
+                        potential = modified_potential
+                        possible_directions = generate_possible_directions(len(point), (dimension, -sign))
+
+                appended.append(point + translation)
 
         return appended
 
 
 class MultiClassRBO:
-    def __init__(self, gamma=0.05, n_steps=5000, step_size=0.0001, stop_probability=0.001, criterion='balance',
-                 method='sampling'):
-        assert criterion in ['balance', 'minimize', 'maximize']
+    def __init__(self, gamma=0.05, step_size=0.001, n_steps=500, approximate_potential=True,
+                 n_nearest_neighbors=25, method='sampling'):
         assert method in ['sampling', 'complete']
-        assert 0.0 <= stop_probability <= 1.0
 
         self.gamma = gamma
-        self.n_steps = n_steps
         self.step_size = step_size
-        self.stop_probability = stop_probability
-        self.criterion = criterion
+        self.n_steps = n_steps
+        self.approximate_potential = approximate_potential
+        self.n_nearest_neighbors = n_nearest_neighbors
         self.method = method
 
     def fit_sample(self, X, y):
@@ -122,9 +163,9 @@ class MultiClassRBO:
                     X_sample.append(observations[j][indices])
                     y_sample.append(classes[j] * np.ones(len(X_sample[-1])))
 
-                oversampler = RBO(gamma=self.gamma, n_steps=self.n_steps, step_size=self.step_size,
-                                  stop_probability=self.stop_probability, criterion=self.criterion,
-                                  minority_class=cls, n=n)
+                oversampler = RBO(gamma=self.gamma, step_size=self.step_size, n_steps=self.n_steps,
+                                  approximate_potential=self.approximate_potential,
+                                  n_nearest_neighbors=self.n_nearest_neighbors, minority_class=cls, n=n)
 
                 appended = oversampler.fit_sample(np.concatenate(X_sample), np.concatenate(y_sample))
 
@@ -135,9 +176,9 @@ class MultiClassRBO:
                 cls = classes[i]
                 n = n_max - len(observations[i])
 
-                oversampler = RBO(gamma=self.gamma, n_steps=self.n_steps, step_size=self.step_size,
-                                  stop_probability=self.stop_probability, criterion=self.criterion,
-                                  minority_class=cls, n=n)
+                oversampler = RBO(gamma=self.gamma, step_size=self.step_size, n_steps=self.n_steps,
+                                  approximate_potential=self.approximate_potential,
+                                  n_nearest_neighbors=self.n_nearest_neighbors, minority_class=cls, n=n)
 
                 appended = oversampler.fit_sample(X, y)
 

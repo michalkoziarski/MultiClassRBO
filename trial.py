@@ -10,7 +10,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-dataset', choices=datasets.names(), required=True)
 parser.add_argument('-partition', choices=[1, 2, 3, 4, 5], type=int, required=True)
 parser.add_argument('-fold', choices=[1, 2], type=int, required=True)
-parser.add_argument('-mode', choices=['OVA', 'OVO'], required=True, default='OVA')
+parser.add_argument('-mode', choices=['OVA', 'OVO'], default='OVA')
 parser.add_argument('-method', choices=['sampling', 'complete'], default='sampling')
 parser.add_argument('-results_path', type=str, default=os.path.join(os.path.dirname(__file__), 'results'))
 

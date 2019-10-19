@@ -55,17 +55,11 @@ class RBO:
             sizes = [sum(y == c) for c in classes]
 
             minority_class = classes[np.argmin(sizes)]
-            majority_class = classes[np.argmax(sizes)]
         else:
             minority_class = self.minority_class
 
-            if classes[0] != minority_class:
-                majority_class = classes[0]
-            else:
-                majority_class = classes[1]
-
-        minority_points = X[y == minority_class]
-        majority_points = X[y == majority_class]
+        minority_points = X[y == minority_class].copy()
+        majority_points = X[y != minority_class].copy()
 
         if self.n is None:
             n = len(majority_points) - len(minority_points)
@@ -99,7 +93,7 @@ class RBO:
                 closest_points = X[indices]
                 closest_labels = y[indices]
                 closest_minority_points = closest_points[closest_labels == minority_class]
-                closest_majority_points = closest_points[closest_labels == majority_class]
+                closest_majority_points = closest_points[closest_labels != minority_class]
             else:
                 closest_minority_points = minority_points
                 closest_majority_points = majority_points
